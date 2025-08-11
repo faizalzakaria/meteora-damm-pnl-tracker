@@ -11,6 +11,12 @@ interface Position {
   capital_additions_usd?: number;  // Additional capital added after initial investment
   capital_reduction_usd?: number;  // Capital reduced/withdrawn from position
   total_invested_usd?: number;     // Total capital invested (initial + additions - reductions)
+  // Closure data
+  closed_at?: string;              // When position was closed
+  exit_value_usd?: number;         // Final exit value in USD
+  final_pnl_usd?: number;          // Final total PNL at closure
+  final_pnl_percentage?: number;   // Final PNL percentage at closure
+  is_closed?: boolean;             // Whether position is closed
 }
 
 interface PnlData {
@@ -239,7 +245,8 @@ function generateSuggestion(position: Position, pnlData: PnlData): Suggestion {
   const daysOpen = Math.floor((Date.now() - new Date(position.created_at).getTime()) / (1000 * 60 * 60 * 24));
   
   // High fees relative to unrealized profit (risk of giving back gains)
-  if (unrealizedPnlUSD > 0 && realizedPnlUSD / unrealizedPnlUSD > THRESHOLDS.HIGH_FEES_RATIO) {
+  // Only trigger this if unrealized gains are meaningful (>$10) to avoid false positives
+  if (unrealizedPnlUSD > 10 && realizedPnlUSD / unrealizedPnlUSD > THRESHOLDS.HIGH_FEES_RATIO) {
     return {
       action: 'TAKE_PROFIT',
       reason: `High fees earned (${((realizedPnlUSD / unrealizedPnlUSD) * 100).toFixed(0)}% of unrealized gains). Secure profits before market turns.`,
@@ -357,6 +364,12 @@ async function displayPositionInfo(token: string, position: Position, currentVal
     
     console.log(`${colorText('Current Position Value:', COLORS.WHITE)} ${colorText(`$${currentValueUSD.toFixed(2)}`, COLORS.BRIGHT_YELLOW, true)} ${colorText(`(${(pnlData.current_value_sol || 0).toFixed(4)} SOL)`, COLORS.GRAY)}`);
     console.log(`${colorText('Fees Claimed (Realized):', COLORS.WHITE)} ${formatUSDNeutral(pnlData.realized_pnl_usd)} ${colorText(`(${(pnlData.realized_pnl_sol || 0).toFixed(4)} SOL)`, COLORS.GRAY)}`);
+    
+    // Show current SOL price used for calculations
+    const currentSOLPrice = await getSOLPriceUSD();
+    if (currentSOLPrice > 0) {
+      console.log(`${colorText('SOL Price (live):', COLORS.GRAY)} ${colorText(`$${currentSOLPrice.toFixed(2)}`, COLORS.BRIGHT_CYAN, true)}`);
+    }
   console.log(``);
   
   // Show PNL in USD with SOL equivalents in parentheses
@@ -402,16 +415,20 @@ async function displayPositionInfo(token: string, position: Position, currentVal
 }
 
 function listAllPositions(positions: Record<string, Position>): void {
-  const tokens = Object.keys(positions);
+  const activePositions = Object.fromEntries(
+    Object.entries(positions).filter(([_, pos]) => !pos.is_closed)
+  );
+  const tokens = Object.keys(activePositions);
+  
   if (tokens.length === 0) {
-    console.log(colorText('No positions found.', COLORS.GRAY));
+    console.log(colorText('No active positions found.', COLORS.GRAY));
     return;
   }
 
-  console.log(`\n${colorText('All Positions:', COLORS.BOLD + COLORS.WHITE)}`);
-  console.log(colorText('==============', COLORS.CYAN));
+  console.log(`\n${colorText('Active Positions:', COLORS.BOLD + COLORS.WHITE)}`);
+  console.log(colorText('=================', COLORS.CYAN));
   tokens.forEach(token => {
-    const position = positions[token];
+    const position = activePositions[token];
     const capitalAdditions = position.capital_additions_usd || 0;
     const capitalReductions = position.capital_reduction_usd || 0;
     const totalInvested = position.initial_value_usd + capitalAdditions - capitalReductions;
@@ -441,6 +458,29 @@ function listAllPositions(positions: Record<string, Position>): void {
   console.log('');
 }
 
+function listClosedPositions(positions: Record<string, Position>): void {
+  const closedPositions = Object.fromEntries(
+    Object.entries(positions).filter(([_, pos]) => pos.is_closed)
+  );
+  const tokens = Object.keys(closedPositions);
+  
+  if (tokens.length === 0) {
+    console.log(colorText('No closed positions found.', COLORS.GRAY));
+    return;
+  }
+
+  console.log(`\n${colorText('Closed Positions:', COLORS.BOLD + COLORS.WHITE)}`);
+  console.log(colorText('=================', COLORS.CYAN));
+  tokens.forEach(token => {
+    const position = closedPositions[token];
+    const daysOpen = Math.floor((new Date(position.closed_at!).getTime() - new Date(position.created_at).getTime()) / (1000 * 60 * 60 * 24));
+    
+    console.log(`${colorText(token.toUpperCase(), COLORS.BRIGHT_CYAN, true)}: ${formatUSDNeutral(position.total_invested_usd!)} → ${formatUSDNeutral(position.exit_value_usd!)} ${formatPercentage(position.final_pnl_percentage!)} ${colorText(`(${daysOpen} days)`, COLORS.GRAY)}`);
+    console.log(`  ${colorText('Final PNL:', COLORS.GRAY)} ${formatUSDValue(position.final_pnl_usd!)} ${colorText('Closed:', COLORS.GRAY)} ${colorText(position.closed_at!.substring(0, 19), COLORS.WHITE)}`);
+  });
+  console.log('');
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   
@@ -449,22 +489,26 @@ async function main(): Promise<void> {
     console.log('  ./damm-pnl <token_name> <current_position_value_usd> [fees_claimed_usd]');
     console.log('  ./damm-pnl add-capital <token_name> <additional_capital_usd>');
     console.log('  ./damm-pnl reduce-capital <token_name> <capital_to_reduce_usd>');
+    console.log('  ./damm-pnl close <token_name> <exit_value_usd> [final_fees_usd]');
     console.log('  ./damm-pnl remove <token_name>');
     console.log('  ./damm-pnl reset <token_name> <new_initial_value_usd>');
     console.log('  ./damm-pnl fix');
     console.log('  ./damm-pnl clean');
     console.log('  ./damm-pnl list');
+    console.log('  ./damm-pnl closed');
     console.log('');
     console.log('Examples:');
     console.log('  ./damm-pnl aixbt 249.07    # Position value in USD');
     console.log('  ./damm-pnl aixbt 275.50 12.30    # With fees claimed in USD');
     console.log('  ./damm-pnl add-capital aixbt 360.00    # Add $360 more capital');
     console.log('  ./damm-pnl reduce-capital aixbt 100.00    # Reduce capital by $100');
+    console.log('  ./damm-pnl close bb 730.00 5.00    # Close position at $730 with $5 final fees');
     console.log('  ./damm-pnl remove aixbt');
     console.log('  ./damm-pnl reset aixbt 200.00    # Reset to $200 USD');
     console.log('  ./damm-pnl fix   # Convert old SOL-based positions to USD');
     console.log('  ./damm-pnl clean  # Remove positions with incorrect data');
-    console.log('  ./damm-pnl list');
+    console.log('  ./damm-pnl list    # Show active positions');
+    console.log('  ./damm-pnl closed  # Show closed positions');
     process.exit(1);
   }
 
@@ -473,6 +517,11 @@ async function main(): Promise<void> {
 
   if (command === 'list') {
     listAllPositions(positions);
+    return;
+  }
+
+  if (command === 'closed') {
+    listClosedPositions(positions);
     return;
   }
 
@@ -702,6 +751,91 @@ async function main(): Promise<void> {
     console.log(colorText(`📉 Reduced $${capitalToReduce.toFixed(2)} capital from ${token.toUpperCase()}`, COLORS.BRIGHT_YELLOW));
     console.log(`${colorText('Total invested:', COLORS.GRAY)} ${formatUSDNeutral(oldTotalInvested)} ${colorText('→', COLORS.GRAY)} ${formatUSDNeutral(newTotalInvested)}`);
     console.log(`${colorText('Capital breakdown:', COLORS.GRAY)} ${colorText('initial:', COLORS.GRAY)} ${formatUSDNeutral(position.initial_value_usd)} ${colorText('+ additions:', COLORS.GRAY)} ${formatUSDNeutral(position.capital_additions_usd)} ${colorText('- reductions:', COLORS.GRAY)} ${formatUSDNeutral(position.capital_reduction_usd)}`);
+    return;
+  }
+
+  if (command === 'close') {
+    if (args.length < 3) {
+      console.error('Usage: ./damm-pnl close <token_name> <exit_value_usd> [final_fees_usd]');
+      process.exit(1);
+    }
+    
+    const token = args[1].toLowerCase();
+    const exitValueUSD = parseFloat(args[2]);
+    let finalFeesUSD = 0;
+    
+    if (args.length >= 4) {
+      finalFeesUSD = parseFloat(args[3]);
+      if (isNaN(finalFeesUSD)) {
+        console.error(`Error: Final fees must be a number, got '${args[3]}'`);
+        process.exit(1);
+      }
+    }
+    
+    if (isNaN(exitValueUSD)) {
+      console.error(`Error: Exit value must be a number, got '${args[2]}'`);
+      process.exit(1);
+    }
+    
+    if (exitValueUSD <= 0) {
+      console.error(`Error: Exit value must be positive, got '${exitValueUSD}'`);
+      process.exit(1);
+    }
+    
+    if (!positions[token]) {
+      console.error(`Position for ${token.toUpperCase()} not found.`);
+      process.exit(1);
+    }
+    
+    if (positions[token].is_closed) {
+      console.error(`Position for ${token.toUpperCase()} is already closed.`);
+      process.exit(1);
+    }
+    
+    const position = positions[token];
+    
+    // Initialize fields if they don't exist (backward compatibility)
+    if (position.capital_additions_usd === undefined) {
+      position.capital_additions_usd = 0;
+    }
+    if (position.capital_reduction_usd === undefined) {
+      position.capital_reduction_usd = 0;
+    }
+    
+    // Add final fees to total fees claimed
+    position.fees_claimed_usd += finalFeesUSD;
+    
+    // Calculate final PNL
+    const totalInvestedUSD = position.initial_value_usd + position.capital_additions_usd - position.capital_reduction_usd;
+    const unrealizedPnlUSD = exitValueUSD - totalInvestedUSD;
+    const realizedPnlUSD = position.fees_claimed_usd;
+    const finalTotalPnlUSD = unrealizedPnlUSD + realizedPnlUSD;
+    const finalPnlPercentage = totalInvestedUSD > 0 ? (finalTotalPnlUSD / totalInvestedUSD) * 100 : 0;
+    
+    // Mark position as closed
+    const now = new Date().toISOString();
+    position.closed_at = now;
+    position.exit_value_usd = exitValueUSD;
+    position.final_pnl_usd = finalTotalPnlUSD;
+    position.final_pnl_percentage = finalPnlPercentage;
+    position.is_closed = true;
+    position.last_updated = now;
+    
+    savePositions(positions);
+    
+    // Display final position summary
+    console.log(colorText(`🏁 Position ${token.toUpperCase()} CLOSED`, COLORS.BRIGHT_MAGENTA, true));
+    console.log(`${colorText('Exit Value:', COLORS.WHITE)} ${formatUSDNeutral(exitValueUSD)}`);
+    if (finalFeesUSD > 0) {
+      console.log(`${colorText('Final Fees:', COLORS.WHITE)} ${formatUSDNeutral(finalFeesUSD)}`);
+    }
+    console.log(`${colorText('Total Invested:', COLORS.WHITE)} ${formatUSDNeutral(totalInvestedUSD)}`);
+    console.log(`${colorText('Final PNL:', COLORS.BOLD + COLORS.WHITE)} ${formatUSDValue(finalTotalPnlUSD)} ${formatPercentage(finalPnlPercentage)}`);
+    
+    const daysOpen = Math.floor((new Date(now).getTime() - new Date(position.created_at).getTime()) / (1000 * 60 * 60 * 24));
+    console.log(`${colorText('Position Duration:', COLORS.GRAY)} ${colorText(`${daysOpen} day${daysOpen !== 1 ? 's' : ''}`, COLORS.WHITE)}`);
+    console.log(`${colorText('Closed at:', COLORS.GRAY)} ${colorText(now.substring(0, 19), COLORS.WHITE)}`);
+    
     return;
   }
 
