@@ -1,0 +1,19 @@
+{
+  "name": "damm-pnl-tracker",
+  "version": "1.0.0",
+  "description": "Meteora DAMM PNL tracker for tracking positions and fees",
+  "main": "damm-pnl.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node damm-pnl.ts"
+  },
+  "dependencies": {
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^20.0.0"
+  },
+  "devDependencies": {},
+  "keywords": ["meteora", "damm", "pnl", "tracker"],
+  "author": "",
+  "license": "MIT"
+}
