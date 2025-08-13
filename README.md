@@ -2,7 +2,7 @@
 
 A **completely offline** command-line tool for tracking your cryptocurrency trading PnL (Profit and Loss). No private keys, no wallet connections, no blockchain queries - just local data storage with live price updates from CoinGecko.
 
-## = Privacy & Security
+## Privacy & Security
 
 - **100% Offline Operation**: All your position data stays on your local machine
 - **No Private Keys Required**: Never asks for or stores any sensitive information
@@ -10,17 +10,17 @@ A **completely offline** command-line tool for tracking your cryptocurrency trad
 - **Local Data Only**: Uses simple JSON files for data storage
 - **Minimal Network**: Only fetches public SOL price from CoinGecko API
 
-## ( Features
+## Features
 
-- =� **Real-time PnL Calculation** with live SOL price feeds
-- =� **Smart Profit Taking** - distinguishes between capital reduction and pure profit
-- =� **Advanced Position Management** - add capital, take profits, track fees
-- <� **Smart Trading Suggestions** - get recommendations based on your position performance
-- =� **Comprehensive Reporting** - daily summaries, win rates, expected value analysis
-- <� **Beautiful CLI Interface** - color-coded output with progress indicators
-- =� **Persistent Storage** - your data is saved locally between sessions
+- Real-time PnL Calculation** with live SOL price feeds
+- **Smart Profit Taking** - distinguishes between capital reduction and pure profit
+- **Advanced Position Management** - add capital, take profits, track fees
+- **Smart Trading Suggestions** - get recommendations based on your position performance
+- **Comprehensive Reporting** - daily summaries, win rates, expected value analysis
+- **Beautiful CLI Interface** - color-coded output with progress indicators
+- **Persistent Storage** - your data is saved locally between sessions
 
-## =� Installation
+## Installation
 
 ### Prerequisites
 - Node.js 16+ 
@@ -74,7 +74,7 @@ chmod +x damm-pnl.ts
 ./damm-pnl summary
 ```
 
-## <� Core Commands
+## Core Commands
 
 ### Position Management
 ```bash
@@ -118,7 +118,7 @@ chmod +x damm-pnl.ts
 ./damm-pnl fix
 ```
 
-## =� Smart Profit Taking
+## Smart Profit Taking
 
 The `take-profit` command intelligently handles your withdrawals:
 
@@ -137,7 +137,7 @@ This gives you accurate tracking of:
 - How much pure profit you've extracted
 - Realistic PnL calculations
 
-## =� Advanced Analytics
+## Advanced Analytics
 
 ### Position Display Features
 - **Unrealized PnL**: Current position value vs remaining invested capital
@@ -152,7 +152,7 @@ This gives you accurate tracking of:
 - **Expected Value**: Statistical analysis of your trading strategy
 - **Best/Worst Trades**: Track your biggest wins and losses
 
-## =� Technical Details
+## Technical Details
 
 ### Data Storage
 - **Position Data**: `damm_positions.json` (your trading positions)
@@ -170,8 +170,6 @@ This gives you accurate tracking of:
 - **Error Handling**: Graceful error handling prevents data corruption
 - **Local Only**: No data transmission except public price fetching
 
-## =' Configuration
-
 ### Suggestion Thresholds
 The trading suggestions are based on configurable thresholds in the code:
 - **Take Profit**: 25% gain
@@ -184,7 +182,7 @@ The trading suggestions are based on configurable thresholds in the code:
 - **Fallback Duration**: Up to 1 hour if API fails
 - **Final Fallback**: $185 if no data available
 
-## =� Example Workflow
+## Example Workflow
 
 ```bash
 # 1. Start tracking AIXBT with $500 investment
@@ -209,11 +207,11 @@ The trading suggestions are based on configurable thresholds in the code:
 ./damm-pnl close aixbt 1200.00 50.00
 ```
 
-## > Contributing
+## Contributing
 
 This is a personal finance tracking tool. Feel free to fork and modify for your own needs.
 
-## � Disclaimer
+## Disclaimer
 
 This tool is for tracking and analysis purposes only. It does not:
 - Provide financial advice
@@ -223,10 +221,10 @@ This tool is for tracking and analysis purposes only. It does not:
 
 Always verify your actual positions and PnL with your exchange or wallet.
 
-## =� License
+## License
 
 MIT License - Use at your own risk for personal tracking purposes.
 
 ---
 
-**Built for traders who value privacy and want complete control over their data.** =�
+**Built for traders who value privacy and want complete control over their data.**
