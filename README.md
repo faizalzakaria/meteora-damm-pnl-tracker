@@ -39,7 +39,7 @@ npm install
 chmod +x damm-pnl.ts
 ```
 
-## =� Quick Start
+## Quick Start
 
 ### 1. Create Your First Position
 ```bash
