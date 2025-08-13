@@ -29,7 +29,7 @@ A **completely offline** command-line tool for tracking your cryptocurrency trad
 ### Setup
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone git@github.com:faizalzakaria/meteora-damm-pnl-tracker.git
 cd damm-pnl-tracker
 
 # Install dependencies
