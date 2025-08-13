@@ -173,7 +173,7 @@ This gives you accurate tracking of:
 ## =' Configuration
 
 ### Suggestion Thresholds
-The AI suggestions are based on configurable thresholds in the code:
+The trading suggestions are based on configurable thresholds in the code:
 - **Take Profit**: 25% gain
 - **Strong Profit**: 15% gain
 - **Stop Loss**: -20% loss
