@@ -1,0 +1,45 @@
+{
+  "bb_1754889637603_m02vuip7z": {
+    "id": "bb_1754889637603_m02vuip7z",
+    "token": "bb",
+    "initial_value_usd": 500,
+    "fees_claimed_usd": 10,
+    "created_at": "2025-08-11T05:20:37.602Z",
+    "last_updated": "2025-08-11T05:20:44.385Z",
+    "capital_additions_usd": 0,
+    "capital_reduction_usd": 0,
+    "total_invested_usd": 500,
+    "closed_at": "2025-08-11T05:20:44.385Z",
+    "exit_value_usd": 600,
+    "final_pnl_usd": 110,
+    "final_pnl_percentage": 22,
+    "is_closed": true
+  },
+  "bb_1754889650597_j7q4hzcj8": {
+    "id": "bb_1754889650597_j7q4hzcj8",
+    "token": "bb",
+    "initial_value_usd": 800,
+    "fees_claimed_usd": 5,
+    "created_at": "2025-08-11T05:20:50.596Z",
+    "last_updated": "2025-08-11T05:21:10.606Z",
+    "capital_additions_usd": 0,
+    "capital_reduction_usd": 0,
+    "total_invested_usd": 800,
+    "closed_at": "2025-08-11T05:21:10.606Z",
+    "exit_value_usd": 750,
+    "final_pnl_usd": -45,
+    "final_pnl_percentage": -5.625,
+    "is_closed": true
+  },
+  "bb_1754889677450_nlq08etzt": {
+    "id": "bb_1754889677450_nlq08etzt",
+    "token": "bb",
+    "initial_value_usd": 400,
+    "fees_claimed_usd": 0,
+    "created_at": "2025-08-11T05:21:17.448Z",
+    "last_updated": "2025-08-11T05:21:30.908Z",
+    "capital_additions_usd": 0,
+    "capital_reduction_usd": 0,
+    "total_invested_usd": 400
+  }
+}
