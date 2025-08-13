@@ -2,7 +2,7 @@
 
 A **completely offline** command-line tool for tracking your cryptocurrency trading PnL (Profit and Loss). No private keys, no wallet connections, no blockchain queries - just local data storage with live price updates from CoinGecko.
 
-## Privacy & Security
+##Privacy & Security
 
 - **100% Offline Operation**: All your position data stays on your local machine
 - **No Private Keys Required**: Never asks for or stores any sensitive information
