@@ -10,8 +10,7 @@ interface Position {
   created_at: string;
   last_updated: string;
   capital_additions_usd?: number;  // Additional capital added after initial investment
-  capital_reduction_usd?: number;  // Capital reduced/withdrawn from position
-  profit_taken_usd?: number;       // Profit taken beyond invested capital
+  withdrawn_usd?: number;          // Total amount withdrawn from position
   total_invested_usd?: number;     // Total capital invested (initial + additions - reductions)
   // Closure data
   closed_at?: string;              // When position was closed
@@ -241,6 +240,19 @@ function loadPositions(): Record<string, Position> {
             pos.token = key;
           }
           
+          // Migrate to simplified withdraw model
+          if (pos.capital_reduction_usd !== undefined) {
+            pos.withdrawn_usd = pos.capital_reduction_usd + (pos.profit_taken_usd || 0);
+            delete pos.capital_reduction_usd;
+            delete pos.profit_taken_usd;
+          }
+          
+          // Fix total_invested_usd to be initial + additions
+          if (pos.initial_value_usd !== undefined) {
+            const capitalAdditions = pos.capital_additions_usd || 0;
+            pos.total_invested_usd = pos.initial_value_usd + capitalAdditions;
+          }
+          
           migratedPositions[pos.id] = pos as Position;
         }
       }
@@ -292,8 +304,7 @@ async function initializePosition(token: string, initialValueUSD: number): Promi
     created_at: now,
     last_updated: now,
     capital_additions_usd: 0,
-    capital_reduction_usd: 0,
-    profit_taken_usd: 0,
+    withdrawn_usd: 0,
     total_invested_usd: initialValueUSD
   };
 }
@@ -301,26 +312,27 @@ async function initializePosition(token: string, initialValueUSD: number): Promi
 async function calculatePnl(position: Position, currentValueUSD: number): Promise<PnlData> {
   // Initialize fields if they don't exist (backward compatibility)
   const capitalAdditions = position.capital_additions_usd || 0;
-  const capitalReductions = position.capital_reduction_usd || 0;
-  const profitTaken = position.profit_taken_usd || 0;
+  const withdrawn = position.withdrawn_usd || 0;
   
-  // Total invested is initial + additions - reductions (but reductions can't go below 0)
-  const totalInvestedUSD = Math.max(0, position.initial_value_usd + capitalAdditions - capitalReductions);
+  // Total invested stays constant: initial + additions
+  const totalInvestedUSD = position.initial_value_usd + capitalAdditions;
   
-  // Total value received: current position + capital reductions + profit taken + fees
-  const totalValueUSD = currentValueUSD + capitalReductions + profitTaken + position.fees_claimed_usd;
+  // Amount still invested = total invested - amount withdrawn
+  const currentlyInvestedUSD = totalInvestedUSD - withdrawn;
   
-  // Total PnL is total value minus what you originally put in (initial + additions)
-  const originalInvestment = position.initial_value_usd + capitalAdditions;
-  const totalPnlUSD = totalValueUSD - originalInvestment;
+  // Total value received: current position + withdrawn + fees
+  const totalValueUSD = currentValueUSD + withdrawn + position.fees_claimed_usd;
+  
+  // Total PnL is total value minus total invested
+  const totalPnlUSD = totalValueUSD - totalInvestedUSD;
   
   // Unrealized PnL is current position value minus what's still invested
-  const unrealizedPnlUSD = currentValueUSD - totalInvestedUSD;
+  const unrealizedPnlUSD = currentValueUSD - currentlyInvestedUSD;
   
-  // Realized PnL is capital reductions + profit taken + fees
-  const realizedPnlUSD = capitalReductions + profitTaken + position.fees_claimed_usd;
+  // Realized PnL is withdrawn + fees
+  const realizedPnlUSD = withdrawn + position.fees_claimed_usd;
   
-  const pnlPercentage = originalInvestment > 0 ? (totalPnlUSD / originalInvestment) * 100 : 0;
+  const pnlPercentage = totalInvestedUSD > 0 ? (totalPnlUSD / totalInvestedUSD) * 100 : 0;
 
   // Get SOL price for SOL equivalents calculation
   const solPriceUSD = await getSOLPriceUSD();
@@ -456,8 +468,7 @@ async function displayPositionInfo(token: string, position: Position, currentVal
     
     // Show USD values with SOL equivalents in parentheses
     const capitalAdditions = (position.capital_additions_usd || 0);
-    const capitalReductions = (position.capital_reduction_usd || 0);
-    const profitTaken = (position.profit_taken_usd || 0);
+    const withdrawn = (position.withdrawn_usd || 0);
     
     console.log(`${colorText('Initial Position Value:', COLORS.WHITE)} ${formatUSDNeutral(pnlData.initial_value_usd)} ${colorText(`(${(pnlData.initial_value_sol || 0).toFixed(4)} SOL)`, COLORS.GRAY)}`);
     
@@ -469,16 +480,10 @@ async function displayPositionInfo(token: string, position: Position, currentVal
     
     console.log(`${colorText('Total Invested Capital:', COLORS.BOLD + COLORS.WHITE)} ${formatUSDNeutral(pnlData.total_invested_usd)} ${colorText(`(${(pnlData.total_invested_sol || 0).toFixed(4)} SOL)`, COLORS.GRAY)}`);
     
-    if (capitalReductions > 0) {
+    if (withdrawn > 0) {
       const solPrice = await getSOLPriceUSD();
-      const capitalReductionsSOL = solPrice > 0 ? capitalReductions / solPrice : 0;
-      console.log(`${colorText('Capital Taken:', COLORS.WHITE)} ${formatUSDValue(capitalReductions)} ${colorText(`(${formatSOLValue(capitalReductionsSOL)})`, COLORS.GRAY)}`);
-    }
-    
-    if (profitTaken > 0) {
-      const solPrice = await getSOLPriceUSD();
-      const profitTakenSOL = solPrice > 0 ? profitTaken / solPrice : 0;
-      console.log(`${colorText('Pure Profit Taken:', COLORS.WHITE)} ${formatUSDValue(profitTaken)} ${colorText(`(${formatSOLValue(profitTakenSOL)})`, COLORS.GRAY)}`);
+      const withdrawnSOL = solPrice > 0 ? withdrawn / solPrice : 0;
+      console.log(`${colorText('Withdrawn:', COLORS.WHITE)} ${formatUSDValue(withdrawn)} ${colorText(`(${formatSOLValue(withdrawnSOL)})`, COLORS.GRAY)}`);
     }
     
     console.log(`${colorText('Current Position Value:', COLORS.WHITE)} ${colorText(`$${currentValueUSD.toFixed(2)}`, COLORS.BRIGHT_YELLOW, true)} ${colorText(`(${(pnlData.current_value_sol || 0).toFixed(4)} SOL)`, COLORS.GRAY)}`);
@@ -550,20 +555,20 @@ function listAllPositions(positions: Record<string, Position>): void {
   console.log(colorText('=================', COLORS.CYAN));
   activePositions.forEach(position => {
     const capitalAdditions = position.capital_additions_usd || 0;
-    const capitalReductions = position.capital_reduction_usd || 0;
-    const totalInvested = position.initial_value_usd + capitalAdditions - capitalReductions;
+    const withdrawn = position.withdrawn_usd || 0;
+    const totalInvested = position.initial_value_usd + capitalAdditions;
     
     let displayText = `${colorText(position.token.toUpperCase(), COLORS.BRIGHT_CYAN, true)}: `;
     
-    if (capitalAdditions > 0 || capitalReductions > 0) {
+    if (capitalAdditions > 0 || withdrawn > 0) {
       displayText += `${formatUSDNeutral(totalInvested)} ${colorText('(initial:', COLORS.GRAY)} ${formatUSDNeutral(position.initial_value_usd)}`;
       
       if (capitalAdditions > 0) {
         displayText += ` ${colorText('+ added:', COLORS.GRAY)} ${formatUSDNeutral(capitalAdditions)}`;
       }
       
-      if (capitalReductions > 0) {
-        displayText += ` ${colorText('- reduced:', COLORS.GRAY)} ${formatUSDNeutral(capitalReductions)}`;
+      if (withdrawn > 0) {
+        displayText += ` ${colorText('- withdrawn:', COLORS.GRAY)} ${formatUSDNeutral(withdrawn)}`;
       }
       
       displayText += `${colorText(')', COLORS.GRAY)}`;
@@ -834,12 +839,12 @@ async function main(): Promise<void> {
   if (args.length < 1) {
     console.log('Usage:');
     console.log('  ./damm-pnl <token_name> <current_position_value_usd> [fees_claimed_usd]');
+    console.log('  ./damm-pnl claim-fee <token_name> <fees_claimed_usd>');
     console.log('  ./damm-pnl add-capital <token_name> <additional_capital_usd>');
-    console.log('  ./damm-pnl take-profit <token_name> <amount_usd>');
+    console.log('  ./damm-pnl withdraw <token_name> <amount_usd>');
     console.log('  ./damm-pnl close <token_name> <exit_value_usd> [final_fees_usd]');
     console.log('  ./damm-pnl remove <token_name>');
     console.log('  ./damm-pnl reset <token_name> <new_initial_value_usd>');
-    console.log('  ./damm-pnl fix');
     console.log('  ./damm-pnl clean');
     console.log('  ./damm-pnl list');
     console.log('  ./damm-pnl closed');
@@ -848,12 +853,12 @@ async function main(): Promise<void> {
     console.log('Examples:');
     console.log('  ./damm-pnl aixbt 249.07    # Position value in USD');
     console.log('  ./damm-pnl aixbt 275.50 12.30    # With fees claimed in USD');
+    console.log('  ./damm-pnl claim-fee aixbt 12.30    # Only claim fees (no position update)');
     console.log('  ./damm-pnl add-capital aixbt 360.00    # Add $360 more capital');
-    console.log('  ./damm-pnl take-profit aixbt 100.00    # Take $100 profit (reduces capital if <= invested, else pure profit)');
+    console.log('  ./damm-pnl withdraw aixbt 100.00    # Withdraw $100 from position');
     console.log('  ./damm-pnl close bb 730.00 5.00    # Close position at $730 with $5 final fees');
     console.log('  ./damm-pnl remove aixbt');
     console.log('  ./damm-pnl reset aixbt 200.00    # Reset to $200 USD');
-    console.log('  ./damm-pnl fix   # Convert old SOL-based positions to USD');
     console.log('  ./damm-pnl clean  # Remove positions with incorrect data');
     console.log('  ./damm-pnl list    # Show active positions');
     console.log('  ./damm-pnl closed  # Show closed positions');
@@ -905,52 +910,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === 'fix') {
-    // Fix positions where USD values were stored as SOL
-    const solPriceUSD = await getSOLPriceUSD();
-    if (solPriceUSD === 0) {
-      console.error(colorText('❌ Could not get SOL price for conversion', COLORS.BRIGHT_RED));
-      return;
-    }
-
-    let fixedCount = 0;
-    console.log(colorText(`💰 SOL price: $${solPriceUSD.toFixed(2)}`, COLORS.BRIGHT_CYAN));
-    console.log(colorText('🔧 Converting USD values stored as SOL...', COLORS.BRIGHT_CYAN));
-
-    for (const [key, position] of Object.entries(positions)) {
-      // Check if this is an old SOL-based position that needs conversion to USD
-      const hasOldFormat = (position as any).initial_value !== undefined && position.initial_value_usd === undefined;
-      
-      if (hasOldFormat) {
-        const oldPosition = position as any;
-        const oldValue = oldPosition.initial_value;
-        const oldFees = oldPosition.fees_claimed || 0;
-        
-        // Convert from SOL to USD and update to new format
-        position.initial_value_usd = oldValue * solPriceUSD;
-        position.fees_claimed_usd = oldFees * solPriceUSD;
-        
-        // Remove old fields
-        delete (position as any).initial_value;
-        delete (position as any).fees_claimed;
-        
-        console.log(colorText(`🔄 ${key.toUpperCase()}: ${oldValue.toFixed(4)} SOL → $${position.initial_value_usd.toFixed(2)}`, COLORS.YELLOW));
-        if (oldFees > 0) {
-          console.log(colorText(`   Fees: ${oldFees.toFixed(4)} SOL → $${position.fees_claimed_usd.toFixed(2)}`, COLORS.GRAY));
-        }
-        
-        fixedCount++;
-      }
-    }
-    
-    if (fixedCount > 0) {
-      savePositions(positions);
-      console.log(colorText(`✅ Fixed ${fixedCount} positions with USD values`, COLORS.BRIGHT_GREEN));
-    } else {
-      console.log(colorText('No positions needed fixing.', COLORS.GRAY));
-    }
-    return;
-  }
 
   if (command === 'remove') {
     if (args.length < 2) {
@@ -1009,6 +968,41 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'claim-fee') {
+    if (args.length < 3) {
+      console.error('Usage: ./damm-pnl claim-fee <token_name> <fees_claimed_usd>');
+      process.exit(1);
+    }
+    
+    const token = args[1].toLowerCase();
+    const feesToClaimUSD = parseFloat(args[2]);
+    
+    if (isNaN(feesToClaimUSD)) {
+      console.error(`Error: Fees claimed must be a number, got '${args[2]}'`);
+      process.exit(1);
+    }
+    
+    if (feesToClaimUSD <= 0) {
+      console.error(`Error: Fees claimed must be positive, got '${feesToClaimUSD}'`);
+      process.exit(1);
+    }
+    
+    const position = findActivePosition(positions, token);
+    if (!position) {
+      console.error(`No active position for ${token.toUpperCase()} found. Create a position first.`);
+      process.exit(1);
+    }
+    
+    // Add the fees to the position
+    position.fees_claimed_usd += feesToClaimUSD;
+    position.last_updated = new Date().toISOString();
+    
+    savePositions(positions);
+    console.log(colorText(`💰 Claimed $${feesToClaimUSD.toFixed(2)} in fees for ${token.toUpperCase()}`, COLORS.BRIGHT_GREEN));
+    console.log(`${colorText('Total fees claimed:', COLORS.GRAY)} ${formatUSDNeutral(position.fees_claimed_usd)}`);
+    return;
+  }
+
   if (command === 'add-capital') {
     if (args.length < 3) {
       console.error('Usage: ./damm-pnl add-capital <token_name> <additional_capital_usd>');
@@ -1038,14 +1032,14 @@ async function main(): Promise<void> {
     if (position.capital_additions_usd === undefined) {
       position.capital_additions_usd = 0;
     }
-    if (position.capital_reduction_usd === undefined) {
-      position.capital_reduction_usd = 0;
+    if (position.withdrawn_usd === undefined) {
+      position.withdrawn_usd = 0;
     }
     
     // Add the capital
     position.capital_additions_usd += additionalCapital;
-    // Update total invested: initial + additions - reductions
-    position.total_invested_usd = position.initial_value_usd + position.capital_additions_usd - position.capital_reduction_usd;
+    // Update total invested: initial + additions (withdrawals don't change this)
+    position.total_invested_usd = position.initial_value_usd + position.capital_additions_usd;
     position.last_updated = new Date().toISOString();
     
     savePositions(positions);
@@ -1054,9 +1048,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === 'take-profit') {
+  if (command === 'withdraw') {
     if (args.length < 3) {
-      console.error('Usage: ./damm-pnl take-profit <token_name> <amount_usd>');
+      console.error('Usage: ./damm-pnl withdraw <token_name> <amount_usd>');
       process.exit(1);
     }
     
@@ -1083,43 +1077,23 @@ async function main(): Promise<void> {
     if (position.capital_additions_usd === undefined) {
       position.capital_additions_usd = 0;
     }
-    if (position.capital_reduction_usd === undefined) {
-      position.capital_reduction_usd = 0;
-    }
-    if (position.profit_taken_usd === undefined) {
-      position.profit_taken_usd = 0;
+    if (position.withdrawn_usd === undefined) {
+      position.withdrawn_usd = 0;
     }
     
-    // Calculate current total invested: initial + additions - reductions
-    const currentTotalInvested = position.initial_value_usd + position.capital_additions_usd - position.capital_reduction_usd;
+    // Total invested stays constant: initial + additions
+    const totalInvested = position.initial_value_usd + position.capital_additions_usd;
     
-    // Determine how much reduces capital vs pure profit
-    const capitalReduction = Math.min(amountToTake, currentTotalInvested);
-    const pureProfit = amountToTake - capitalReduction;
-    
-    // Update the position
-    const oldTotalInvested = currentTotalInvested;
-    position.capital_reduction_usd += capitalReduction;
-    position.profit_taken_usd += pureProfit;
-    const newTotalInvested = Math.max(0, position.initial_value_usd + position.capital_additions_usd - position.capital_reduction_usd);
-    position.total_invested_usd = newTotalInvested;
+    // Update the position - simple withdrawal
+    position.withdrawn_usd += amountToTake;
+    position.total_invested_usd = totalInvested;
     position.last_updated = new Date().toISOString();
     
     savePositions(positions);
     
-    console.log(colorText(`💰 Took $${amountToTake.toFixed(2)} from ${token.toUpperCase()}`, COLORS.BRIGHT_GREEN));
-    
-    if (capitalReduction > 0 && pureProfit > 0) {
-      console.log(`${colorText('  Capital reduction:', COLORS.GRAY)} ${formatUSDNeutral(capitalReduction)}`);
-      console.log(`${colorText('  Pure profit:', COLORS.GRAY)} ${formatUSDValue(pureProfit)}`);
-    } else if (capitalReduction > 0) {
-      console.log(`${colorText('  Capital reduction:', COLORS.GRAY)} ${formatUSDNeutral(capitalReduction)}`);
-    } else {
-      console.log(`${colorText('  Pure profit:', COLORS.GRAY)} ${formatUSDValue(pureProfit)}`);
-    }
-    
-    console.log(`${colorText('Total invested:', COLORS.GRAY)} ${formatUSDNeutral(oldTotalInvested)} ${colorText('→', COLORS.GRAY)} ${formatUSDNeutral(newTotalInvested)}`);
-    console.log(`${colorText('Total profit taken:', COLORS.GRAY)} ${formatUSDValue(position.profit_taken_usd)}`);
+    console.log(colorText(`💰 Withdrew $${amountToTake.toFixed(2)} from ${token.toUpperCase()}`, COLORS.BRIGHT_GREEN));
+    console.log(`${colorText('Total invested (unchanged):', COLORS.GRAY)} ${formatUSDNeutral(totalInvested)}`);
+    console.log(`${colorText('Total withdrawn:', COLORS.GRAY)} ${formatUSDValue(position.withdrawn_usd)}`);
     return;
   }
 
@@ -1161,23 +1135,19 @@ async function main(): Promise<void> {
     if (position.capital_additions_usd === undefined) {
       position.capital_additions_usd = 0;
     }
-    if (position.capital_reduction_usd === undefined) {
-      position.capital_reduction_usd = 0;
-    }
-    if (position.profit_taken_usd === undefined) {
-      position.profit_taken_usd = 0;
+    if (position.withdrawn_usd === undefined) {
+      position.withdrawn_usd = 0;
     }
     
     // Add final fees to total fees claimed
     position.fees_claimed_usd += finalFeesUSD;
     
-    // Calculate final PNL using correct logic
-    const originalInvestment = position.initial_value_usd + position.capital_additions_usd; // Total capital originally invested
-    const capitalReductions = position.capital_reduction_usd || 0; // Capital reductions
-    const profitTaken = position.profit_taken_usd || 0; // Pure profit taken
-    const totalValueUSD = exitValueUSD + capitalReductions + profitTaken + position.fees_claimed_usd; // Total value received
-    const finalTotalPnlUSD = totalValueUSD - originalInvestment; // Total return minus original investment
-    const finalPnlPercentage = originalInvestment > 0 ? (finalTotalPnlUSD / originalInvestment) * 100 : 0;
+    // Calculate final PNL using simplified logic
+    const totalInvested = position.initial_value_usd + position.capital_additions_usd; // Total capital invested
+    const withdrawn = position.withdrawn_usd || 0; // Total withdrawn
+    const totalValueUSD = exitValueUSD + withdrawn + position.fees_claimed_usd; // Total value received
+    const finalTotalPnlUSD = totalValueUSD - totalInvested; // Total return minus total invested
+    const finalPnlPercentage = totalInvested > 0 ? (finalTotalPnlUSD / totalInvested) * 100 : 0;
     
     // Mark position as closed
     const now = new Date().toISOString();
@@ -1185,7 +1155,7 @@ async function main(): Promise<void> {
     position.exit_value_usd = exitValueUSD;
     position.final_pnl_usd = finalTotalPnlUSD;
     position.final_pnl_percentage = finalPnlPercentage;
-    position.total_invested_usd = originalInvestment; // Store correct original investment amount
+    position.total_invested_usd = totalInvested; // Store total invested amount
     position.is_closed = true;
     position.last_updated = now;
     
@@ -1197,7 +1167,7 @@ async function main(): Promise<void> {
     if (finalFeesUSD > 0) {
       console.log(`${colorText('Final Fees:', COLORS.WHITE)} ${formatUSDNeutral(finalFeesUSD)}`);
     }
-    console.log(`${colorText('Original Investment:', COLORS.WHITE)} ${formatUSDNeutral(originalInvestment)}`);
+    console.log(`${colorText('Total Invested:', COLORS.WHITE)} ${formatUSDNeutral(totalInvested)}`);
     console.log(`${colorText('Final PNL:', COLORS.BOLD + COLORS.WHITE)} ${formatUSDValue(finalTotalPnlUSD)} ${formatPercentage(finalPnlPercentage)}`);
     
     const daysOpen = Math.floor((new Date(now).getTime() - new Date(position.created_at).getTime()) / (1000 * 60 * 60 * 24));
